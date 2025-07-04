@@ -73,18 +73,15 @@ def merge_cell():
     wb = load_workbook('./doc/result.xlsx')
     ws = wb.active
     # align = Alignment(horizontal='general', vertical='center', wrap_text=True)
-    unique = [-1]
-    prev = ''
+    unique = {}
     for i, row in enumerate(ws.iter_rows()):
-        if row[0].value != prev:
-            prev = row[0].value
-            unique.append(i)
-    if row[0].value == prev:
-        unique.append(i + 1)
-    for i in range(1, len(unique)):
-        print(f'merge {unique[i - 1]+2}:{unique[i]+1}')
+        if unique.get(row[0].value):
+            unique[row[0].value][1] = i + 1
+        else:
+            unique[row[0].value] = (i + 1, i + 1)
+    for k, (r1, r2) in unique.items():
         for col in 'ABEFGHIJKL':
-            ws.merge_cells(f'{col}{unique[i - 1]+2}:{col}{unique[i]+1}')
+            ws.merge_cells(f'{col}{r1}:{col}{r2}')
     wb.save('./result.xlsx')
     wb.close()
 
@@ -177,3 +174,4 @@ def crawl_szse():
             time.sleep(1)
 
 crawl_szse()
+merge_cell()
