@@ -1,4 +1,7 @@
+import json
 import os
+import random
+
 import docx
 import time
 import pandas as pd
@@ -8,17 +11,20 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 from win32com import client
 
+TMP_PATH = "./"
+
 def process_doc(doc_name):
-    assert doc_name.endswith(('.doc', '.docx')), "反馈意见文件格式非doc或docx！"
     if doc_name.endswith('doc'):
         word = client.Dispatch("Word.Application")
-        abs_doc_path = os.path.abspath(f'../files/{doc_name}')
+        abs_doc_dir = os.path.abspath(TMP_PATH)
+        abs_doc_path = os.path.abspath(f'{abs_doc_dir}/{doc_name}')
         doc = word.Documents.Open(abs_doc_path)
-        doc.SaveAs(f"{abs_doc_path}x", 12)  # 12代表docx格式
+        doc.SaveAs(f"{abs_doc_dir}/../{doc_name}x", 12)  # 12代表docx格式
         doc.Close()
-        os.remove(abs_doc_path)
+        os.rename(f'{abs_doc_dir}/../{doc_name}x', f'{abs_doc_dir}/{doc_name}x')
         doc_name = doc_name + 'x'
-    with open(f'../files/{doc_name}', 'rb') as f:
+        os.remove(abs_doc_path)
+    with open(f'{TMP_PATH}/{doc_name}', 'rb') as f:
         doc = docx.Document(f)
         texts = []
         for paragraph in doc.paragraphs:
@@ -70,7 +76,7 @@ def feedback_to_excel(bond_info):
     df.to_excel('./result.xlsx', index=False)
 
 def merge_cell():
-    wb = load_workbook('./doc/result.xlsx')
+    wb = load_workbook('./result.xlsx')
     ws = wb.active
     # align = Alignment(horizontal='general', vertical='center', wrap_text=True)
     unique = {}
@@ -78,12 +84,110 @@ def merge_cell():
         if unique.get(row[0].value):
             unique[row[0].value][1] = i + 1
         else:
-            unique[row[0].value] = (i + 1, i + 1)
+            unique[row[0].value] = [i + 1, i + 1]
     for k, (r1, r2) in unique.items():
         for col in 'ABEFGHIJKL':
             ws.merge_cells(f'{col}{r1}:{col}{r2}')
     wb.save('./result.xlsx')
     wb.close()
+
+
+def crawl_sse():
+    index = "https://query.sse.com.cn/commonSoaQuery.do"
+    doc_download='https://static.sse.com.cn/bond/'
+    data = {
+        'jsonCallBack': f'jsonpCallback{random.randint(10000, 99999)}',
+        'isPagination': 'true',
+        'sqlId': 'ZQ_XMLB',
+        'pageHelp.pageSize': '20',
+        'status': '2',
+        'bond_type': '0,5',
+        'pageHelp.pageNo': 1,
+    }
+    page_data = {
+        'jsonCallBack': f'jsonpCallback{random.randint(10000000, 99999999)}',
+        'isPagination': 'false',
+    }
+    i=0
+    while i < 5:
+        i += 1
+        print(f"***************** page {i} *****************")
+        data['PAGENO'] = str(i)
+        while True:
+            try:
+                reports = rq.get(index, params=data, headers={'Referer': 'https://www.sse.com.cn/'})
+                page = json.loads(reports.content.decode().split('(')[-1][:-1])
+            except Exception as e:
+                print(e)
+                time.sleep(2)
+                continue
+            time.sleep(0.5)
+            break
+        for bond in page['pageHelp']['data']:
+            bond_num = bond['BOND_NUM']
+            bond_name = bond['AUDIT_NAME']
+            accept_time = bond['ACCEPT_DATE']
+            update_time = bond['PUBLISH_DATE']
+            state = bond['AUDIT_STATUS']
+            print(f'processing {bond_name}, state: {state}, update_time: {update_time}')
+            year = update_time
+            page_data['sqlId'] = 'ZQ_XMLB'
+            page_data['audit_id'] = bond_num
+            while True:
+                try:
+                    reports = rq.get(index, params=page_data, headers={'Referer': 'https://www.sse.com.cn/'})
+                    bond_page = json.loads(reports.content.decode().split('(')[-1][:-1])
+                except:
+                    time.sleep(2)
+                    continue
+                time.sleep(0.5)
+                break
+            doc_feedback = {}
+            for feedback in bond_page['pageHelp']['data'][0]:
+                soup = BeautifulSoup(feedback['fkyjh'], 'html.parser').find('a')
+                doc_url, doc_name = soup.get('encode-open'), soup.string
+                print(f'\tprocessing {doc_name}', end='......')
+                if not os.path.splitext(doc_name)[0].endswith(('反馈意见', '反馈意见函')):
+                    print('skip')
+                    continue
+                while True:
+                    try:
+                        doc_string = rq.get(doc_download + doc_url)
+                    except:
+                        time.sleep(2)
+                        continue
+                    time.sleep(0.5)
+                    break
+                with open(f'{TMP_PATH}/{doc_name}', 'wb') as f:
+                    f.write(doc_string.content)
+                while not os.path.exists(f'{TMP_PATH}/{doc_name}'):
+                    time.sleep(1)
+                doc_feedback[feedback['fkyjhgxrq']] = process_doc(doc_name)
+                if doc_name.endswith('.doc'):
+                    doc_name = doc_name + 'x'
+                os.remove(f'{TMP_PATH}/{doc_name}')
+                print('done')
+            if not doc_feedback:
+                print('\tNo feedback document found.')
+            assert len(bond_page.json()[0]['data']) == 1, '项目基本信息不唯一！'
+            basic_info = bond_page.json()[0]['data'][0]
+            bond_info = {
+                'name': bond_name,
+                'state': state,
+                'update_date': update_time,
+                'feedback': doc_feedback,
+                'bond_type': basic_info['zqlb'],
+                'scale': basic_info['nfxje'],
+                'issuer': basic_info['fxr'],
+                'area': basic_info['dq'],
+                'underwriter': basic_info['cxsqc'],
+                'file_id': basic_info['jysqrwjwh'],
+                'accept_date': bond['xmslrq'],
+            }
+            feedback_to_excel(bond_info)
+            print()
+            time.sleep(1)
+    json_data = json.loads(reports.text.split('(')[-1][:-1])
 
 
 def crawl_szse():
@@ -107,7 +211,8 @@ def crawl_szse():
         while True:
             try:
                 reports = rq.get(index,params=data)
-            except:
+            except Exception as e:
+                print(e)
                 time.sleep(2)
                 continue
             time.sleep(0.5)
@@ -132,9 +237,15 @@ def crawl_szse():
                 soup = BeautifulSoup(feedback['fkyjh'], 'html.parser').find('a')
                 doc_url, doc_name = soup.get('encode-open'), soup.string
                 print(f'\tprocessing {doc_name}', end='......')
-                if not os.path.splitext(doc_name)[0].endswith('反馈意见'):
+                file_name, suffix = os.path.splitext(doc_name)
+                if not file_name.endswith(('反馈意见', '反馈意见函')):
                     print('skip')
                     continue
+                elif suffix not in ['.doc', '.docx']:
+                    doc_feedback[feedback['fkyjhgxrq']] = '文件格式不正确'
+                    print('skip')
+                    continue
+
                 while True:
                     try:
                         doc_string = rq.get(doc_download + doc_url)
@@ -143,14 +254,14 @@ def crawl_szse():
                         continue
                     time.sleep(0.5)
                     break
-                with open(f'../files/{doc_name}', 'wb') as f:
+                with open(f'{TMP_PATH}/{doc_name}', 'wb') as f:
                     f.write(doc_string.content)
-                while not os.path.exists(f'../files/{doc_name}'):
+                while not os.path.exists(f'{TMP_PATH}/{doc_name}'):
                     time.sleep(1)
                 doc_feedback[feedback['fkyjhgxrq']] = process_doc(doc_name)
                 if doc_name.endswith('.doc'):
                     doc_name = doc_name + 'x'
-                os.remove(f'../files/{doc_name}')
+                os.remove(f'{TMP_PATH}/{doc_name}')
                 print('done')
             if not doc_feedback:
                 print('\tNo feedback document found.')
