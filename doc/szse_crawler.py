@@ -51,7 +51,7 @@ def crawl_szse(begin_page=1, end_page=5):
             state = bond['xmzt']
             print(f'processing {bond_name}, state: {state}, update_time: {update_time}')
             if current_result is not None and bond_name in current_result.index:
-                print('\tThis bond has been processed. Skip.')
+                print('\tThis bond has been processed. Skip.\n')
                 continue
             year = update_time.split('-')[0]
             bond_page = safe_request(index + '?' + bond_url.split('?')[1])
@@ -97,7 +97,7 @@ def crawl_szse(begin_page=1, end_page=5):
             print()
             time.sleep(1)
 
-if os.path.exists('./result_szse.xlsx'):
-    os.remove('./result_szse.xlsx')
+# if os.path.exists('./result_szse.xlsx'):
+#     os.remove('./result_szse.xlsx')
 crawl_szse()
 merge_cell()
