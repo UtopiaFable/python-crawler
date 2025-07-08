@@ -15,7 +15,7 @@ def merge_cell():
     wb = load_workbook(f'./result_sse.xlsx')
     ws = wb.active
     unique = {}
-    ws.delete_rows(8)
+    ws.delete_cols(8)
     for i, row in enumerate(ws.iter_rows()):
         if unique.get(row[0].value):
             unique[row[0].value][1] = i + 1
