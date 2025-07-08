@@ -97,7 +97,7 @@ def crawl_szse(begin_page=1, end_page=5):
             print()
             time.sleep(1)
 
-# if os.path.exists('./result_szse.xlsx'):
-#     os.remove('./result_szse.xlsx')
+if os.path.exists('./result_szse.xlsx'):
+    os.remove('./result_szse.xlsx')
 crawl_szse()
 merge_cell()

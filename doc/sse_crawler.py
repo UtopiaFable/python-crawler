@@ -132,8 +132,8 @@ def crawl_sse(begin_page=1, end_page=5, status='2'):
             time.sleep(1)
 
 
-# if os.path.exists('./result_sse.xlsx'):
-#     os.remove('./result_sse.xlsx')
+if os.path.exists('./result_sse.xlsx'):
+    os.remove('./result_sse.xlsx')
 for status in ['2', '3', '11', '12', '8']:
     crawl_sse(end_page=5, status=status)
     break
