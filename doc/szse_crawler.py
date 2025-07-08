@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 from openpyxl import load_workbook
 from utils import safe_request, process_feedback, feedback_to_excel, sort_excel
 
-
 def merge_cell(suffix='szse'):
     sort_excel('szse')
     wb = load_workbook(f'./result_{suffix}.xlsx')
