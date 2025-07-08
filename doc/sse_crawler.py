@@ -4,13 +4,15 @@ import time
 import random
 from io import BytesIO
 
+import pandas as pd
 from openpyxl import load_workbook
 
-from utils import safe_request, process_feedback, feedback_to_excel
+from utils import safe_request, process_feedback, feedback_to_excel, sort_excel
 
 
-def merge_cell(suffix='sse'):
-    wb = load_workbook(f'./result_{suffix}.xlsx')
+def merge_cell():
+    sort_excel('sse')
+    wb = load_workbook(f'./result_sse.xlsx')
     ws = wb.active
     unique = {}
     ws.delete_rows(8)
@@ -22,10 +24,14 @@ def merge_cell(suffix='sse'):
     for k, (r1, r2) in unique.items():
         for col in 'ABEFGHIJK':
             ws.merge_cells(f'{col}{r1}:{col}{r2}')
-    wb.save(f'./result_{suffix}.xlsx')
+    wb.save(f'./上交所反馈意见.xlsx')
     wb.close()
 
-def crawl_sse(status):
+def crawl_sse(begin_page=1, end_page=5, status='2'):
+    if os.path.exists('./result_sse.xlsx'):
+        current_result = pd.read_excel('./result_sse.xlsx', header=0, index_col=0)
+    else:
+        current_result = None
     bond_type_map = {
         '0': '小公募',
         '1': '私募',
@@ -60,9 +66,7 @@ def crawl_sse(status):
         'jsonCallBack': f'jsonpCallback{random.randint(10000000, 99999999)}',
         'isPagination': 'false',
     }
-    i=0
-    while i < 5:
-        i += 1
+    for i in range(begin_page, end_page + 1):
         print(f"***************** page {i} *****************")
         data['pageHelp.pageNo'] = str(i)
         reports = safe_request(index, params=data, headers={'Referer': 'https://www.sse.com.cn/'})
@@ -73,6 +77,9 @@ def crawl_sse(status):
             update_time = bond['PUBLISH_DATE']
             state = audit_status_map[bond['AUDIT_STATUS']]
             print(f'processing {bond_name}, state: {state}, update_time: {update_time}')
+            if current_result is not None and bond_name in current_result.index:
+                print('\tThis bond has been processed. Skip.\n')
+                continue
             year = update_time.split('-')[0]
             page_data['audit_id'] = bond_num
             page_data['sqlId'] = 'ZQ_GGJG'
@@ -85,7 +92,8 @@ def crawl_sse(status):
                 doc_name = feedback['FILE_TITLE']
                 doc_url = doc_download + feedback['FILE_PATH']
                 print(f'\tprocessing {doc_name}', end='......')
-                if not os.path.splitext(doc_name)[0].endswith(('反馈意见', '反馈意见函')):
+                file_name, suffix = os.path.splitext(doc_name)
+                if '反馈意见' not in file_name or '回复' in file_name:
                     print('skip')
                     continue
                 max_retry = 5
@@ -93,7 +101,7 @@ def crawl_sse(status):
                     try:
                         doc_string = safe_request(doc_url)
                         doc_io = BytesIO(doc_string.content)
-                        doc_feedback[feedback['FILE_TIME']] = process_feedback(doc_io, os.path.splitext(doc_name)[1])
+                        doc_feedback[feedback['FILE_TIME']] = process_feedback(doc_io, suffix)
                         doc_io.close()
                         print('done')
                         break
@@ -124,9 +132,9 @@ def crawl_sse(status):
             time.sleep(1)
 
 
-if os.path.exists('./result_sse.xlsx'):
-    os.remove('./result_sse.xlsx')
+# if os.path.exists('./result_sse.xlsx'):
+#     os.remove('./result_sse.xlsx')
 for status in ['2', '3', '11', '12', '8']:
-    crawl_sse(status)
+    crawl_sse(end_page=5, status=status)
     break
 merge_cell()

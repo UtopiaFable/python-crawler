@@ -136,3 +136,10 @@ def feedback_to_excel(bond_info, suffix):
         })
         df = pd.concat([df, new_row])
     df.to_excel(f'./result_{suffix}.xlsx', index=False)
+
+def sort_excel(suffix):
+    if not os.path.exists(f'./result_{suffix}.xlsx'):
+        return
+    df = pd.read_excel(f'./result_{suffix}.xlsx')
+    df = df.sort_values(by='受理日期', ascending=False)
+    df.to_excel(f'./result_{suffix}.xlsx', index=False)
